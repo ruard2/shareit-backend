@@ -1,0 +1,27 @@
+# Secrets — nooit committen
+.env
+secrets/
+*service-account*.json
+*-firebase-adminsdk-*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Database (lokaal)
+*.db
+*.sqlite3
+
+# Uploads
+static/
+
+# Flutter web-build (staat los op GitHub Pages; niet nodig op Railway)
+web/
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,14 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+SQLAlchemy==2.0.36
+pydantic[email]>=2.0.0
+python-multipart==0.0.9
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.0
+python-jose[cryptography]==3.3.0
+firebase-admin==6.5.0
+python-dotenv==1.0.1
+itsdangerous>=2.0.0
+pyspellchecker>=0.7.0
+# PostgreSQL-driver — alleen op Linux/Railway (op Windows lokaal blijven we SQLite gebruiken)
+psycopg2-binary==2.9.9; platform_system != "Windows"
