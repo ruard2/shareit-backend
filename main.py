@@ -33,6 +33,24 @@ def _check_login_rate(ip: str):
 _ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 _MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
 
+# ── Cloudinary (optioneel, aanbevolen voor productie) ─────────────────────
+# Zet CLOUDINARY_URL in de omgeving (cloudinary://<key>:<secret>@<cloud_name>).
+# Zonder die variabele vallen we terug op lokale opslag in ./static
+# (let op: op Railway is dat tijdelijk en verdwijnt bij elke nieuwe deploy).
+_CLOUDINARY_ENABLED = False
+try:
+    if os.getenv("CLOUDINARY_URL"):
+        import cloudinary  # noqa: F401
+        import cloudinary.uploader  # noqa: F401
+        cloudinary.config(secure=True)  # leest CLOUDINARY_URL automatisch
+        _CLOUDINARY_ENABLED = True
+        print("[OK] Cloudinary actief — foto's worden in de cloud opgeslagen.")
+    else:
+        print("[INFO] CLOUDINARY_URL niet gezet — foto's lokaal in ./static "
+              "(tijdelijk op Railway).")
+except Exception as e:
+    print(f"[WAARSCHUWING] Cloudinary niet geconfigureerd: {e}")
+
 from uuid import uuid4
 from datetime import datetime, timedelta
 from typing import Optional, List, Set, Literal
@@ -959,11 +977,25 @@ async def upload_item_photo(
             detail=f"Bestand is te groot. Maximaal {_MAX_UPLOAD_BYTES // (1024*1024)} MB toegestaan."
         )
 
-    filename = f"{item_id}_{int(datetime.utcnow().timestamp())}{ext}"
-    dest = os.path.join("static", filename)
-    with open(dest, "wb") as f:
-        f.write(contents)
-    item.image_path = f"/static/{filename}"
+    if _CLOUDINARY_ENABLED:
+        # Upload naar Cloudinary → permanente, CDN-versnelde URL.
+        import cloudinary.uploader
+        result = cloudinary.uploader.upload(
+            contents,
+            folder="shareit/items",
+            public_id=f"item_{item_id}_{int(datetime.utcnow().timestamp())}",
+            overwrite=True,
+            resource_type="image",
+        )
+        item.image_path = result["secure_url"]
+    else:
+        # Lokale opslag (alleen geschikt voor lokale ontwikkeling).
+        filename = f"{item_id}_{int(datetime.utcnow().timestamp())}{ext}"
+        dest = os.path.join("static", filename)
+        with open(dest, "wb") as f:
+            f.write(contents)
+        item.image_path = f"/static/{filename}"
+
     db.commit()
     db.refresh(item)
     return _wrap_item(item)

@@ -10,5 +10,6 @@ firebase-admin==6.5.0
 python-dotenv==1.0.1
 itsdangerous>=2.0.0
 pyspellchecker>=0.7.0
+cloudinary==1.41.0
 # PostgreSQL-driver — alleen op Linux/Railway (op Windows lokaal blijven we SQLite gebruiken)
 psycopg2-binary==2.9.9; platform_system != "Windows"
