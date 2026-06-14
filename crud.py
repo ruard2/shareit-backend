@@ -107,26 +107,76 @@ def remove_user_from_group(db: Session, group_id: int, user_id: int) -> bool:
 
 # ─── Notifications CRUD ──────────────────────────────────
 def create_notification(db: Session, user_id: int, type: str, payload: dict | None = None) -> models.Notification:
+    # Normaliseer payload: sommige callers geven een dict, andere een JSON-string.
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+
     notif = models.Notification(
         user_id=user_id,
         type=type,
-        payload=json.dumps(payload or {})
+        payload=json.dumps(payload)
     )
     db.add(notif)
     db.commit()
     db.refresh(notif)
 
+    title, body, cat = _render_push_from_type(type, payload)
+
     # push (best-effort)
     try:
         import push
-        title, body, cat = _render_push_from_type(type, payload or {})
         push.notify_user(db, user_id, title, body, payload or {}, category=cat)
+    except Exception:
+        pass
+
+    # e-mail (best-effort, asynchroon zodat de request niet op SMTP wacht)
+    try:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if user and getattr(user, "email", None):
+            _send_notification_email_async(user.email, user.name or "", title, body)
     except Exception:
         pass
 
     return notif
 
+
+def _send_notification_email_async(to: str, name: str, title: str, body: str):
+    """Verstuur een notificatie-mail in een achtergrond-thread (blokkeert de
+    request niet). Doet niets schadelijks als SMTP niet is geconfigureerd —
+    send_email logt dan alleen naar de console."""
+    import threading
+
+    def _run():
+        try:
+            from email_service import send_email
+            subject = f"ShareIt — {title}"
+            text = (
+                f"Hoi {name},\n\n{body}\n\n"
+                "Open ShareIt om te reageren.\n\n"
+                "Groet,\nHet ShareIt team"
+            )
+            html = (
+                f"<html><body>"
+                f"<p>Hoi <strong>{name}</strong>,</p>"
+                f"<p>{body}</p>"
+                f"<p>Open ShareIt om te reageren.</p>"
+                f"<br><p>Groet,<br>Het ShareIt team</p>"
+                f"</body></html>"
+            )
+            send_email(to, subject, text, html)
+        except Exception as e:
+            print(f"[EMAIL] notificatie-mail mislukt: {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
+
 def _render_push_from_type(type: str, p: dict):
+    if not isinstance(p, dict):
+        p = {}
     if type == "group_join_request":
         nm = p.get("requester_name", "Iemand")
         gn = p.get("group_name", "je groep")
@@ -142,6 +192,25 @@ def _render_push_from_type(type: str, p: dict):
     if type == "item_expired":
         it = p.get("item_name", "een item")
         return ("Item verlopen", f"'{it}' is na 60 dagen niet opgehaald en verwijderd uit de lijst", None)
+    if type == "item_given":
+        it = p.get("item_name", "een item")
+        return ("Item opgehaald", f"'{it}' is gemarkeerd als opgehaald", "borrow")
+    if type == "loan_extended":
+        it = p.get("item_name", "je lening")
+        return ("Lening verlengd", f"De uitleentermijn van '{it}' is verlengd", "borrow")
+    if type == "overdue_return":
+        it = p.get("item_name", "een item")
+        return ("Te laat terugbrengen", f"'{it}' had al teruggebracht moeten zijn", "borrow")
+    if type == "overdue_owner":
+        it = p.get("item_name", "je item")
+        return ("Item nog niet terug", f"'{it}' is nog niet teruggebracht", "borrow")
+    if type == "request_decision":
+        it = p.get("item_name", "je verzoek")
+        st = p.get("status", "")
+        woord = "goedgekeurd" if st == "approved" else ("afgewezen" if st == "rejected" else "bijgewerkt")
+        return ("Verzoek $woord".replace("$woord", woord), f"Je leenverzoek voor '{it}' is $woord".replace("$woord", woord), "borrow")
+    if type == "user_approved":
+        return ("Aanmelding goedgekeurd", "Je bent goedgekeurd — je kunt nu volledig meedoen", "join")
     # default
     return ("Melding", "Je hebt een nieuwe melding", None)
 

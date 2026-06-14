@@ -1102,6 +1102,23 @@ def decide_request(
         br.item.status = "free"
 
     db.commit()
+
+    # Laat de aanvrager weten of het verzoek is goedgekeurd of afgewezen
+    # (in-app notificatie + e-mail via create_notification).
+    if br.requester_id:
+        try:
+            crud.create_notification(
+                db,
+                user_id=br.requester_id,
+                type="request_decision",
+                payload={
+                    "item_name": br.item.name if br.item else "een item",
+                    "status": br.status,
+                },
+            )
+        except Exception as e:
+            print(f"[NOTIF] kon beslissing-notificatie niet maken: {e}")
+
     return br
 
 
